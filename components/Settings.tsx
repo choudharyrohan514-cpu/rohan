@@ -100,13 +100,13 @@ const Settings: React.FC<SettingsProps> = ({ config, onUpdateConfig, onTestConne
         
         <ol className="list-decimal list-inside space-y-3 text-sm text-slate-600 mb-6">
           <li>Create a new <strong>Google Sheet</strong>.</li>
-          <li>Rename 1st tab to <strong>Products</strong> and 2nd tab to <strong>Sales</strong> (Case sensitive!).</li>
           <li>Go to <strong>Extensions &gt; Apps Script</strong>.</li>
           <li>Delete everything and paste the code below.</li>
           <li>Click <strong>Deploy &gt; New Deployment</strong>.</li>
           <li>Select type: <strong>Web App</strong>.</li>
           <li><strong>CRITICAL:</strong> Set "Who has access" to: <strong>Anyone</strong>.</li>
           <li>Click Deploy, copy the URL, and paste it above.</li>
+          <li>If "Products" or "Sales" tabs don't exist, the script will create them automatically.</li>
         </ol>
 
         <div className="relative">
@@ -130,11 +130,21 @@ const Settings: React.FC<SettingsProps> = ({ config, onUpdateConfig, onTestConne
 
 const APPS_SCRIPT_CODE = `
 // PASTE THIS IN GOOGLE APPS SCRIPT EDITOR
-// SETUP: Create two sheets: "Products" and "Sales"
+// SETUP: 
+// 1. Extensions > Apps Script
+// 2. Paste this code
+// 3. Deploy > New Deployment > Web App > Who has access: Anyone
 
 function doGet(e) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   let sheet = ss.getSheetByName('Products');
+  
+  // Auto-create Products Sheet if missing
+  if (!sheet) {
+    sheet = ss.insertSheet('Products');
+    sheet.appendRow(['ID', 'Name', 'Category', 'Wholesale', 'Retail', 'Stock', 'MinStock']);
+    return jsonResponse([]);
+  }
   
   // Auto-create Headers if sheet is empty
   if (sheet.getLastRow() === 0) {
@@ -162,27 +172,43 @@ function doGet(e) {
 
 function doPost(e) {
   const lock = LockService.getScriptLock();
-  lock.tryLock(10000);
+  // Wait for up to 30 seconds for other processes to finish.
+  lock.tryLock(30000);
 
   try {
     const data = JSON.parse(e.postData.contents);
     const ss = SpreadsheetApp.getActiveSpreadsheet();
-    let productSheet = ss.getSheetByName('Products');
-    let salesSheet = ss.getSheetByName('Sales');
     
-    // Ensure Headers Exist
-    if (productSheet.getLastRow() === 0) {
+    // Ensure Products Sheet Exists
+    let productSheet = ss.getSheetByName('Products');
+    if (!productSheet) {
+      productSheet = ss.insertSheet('Products');
       productSheet.appendRow(['ID', 'Name', 'Category', 'Wholesale', 'Retail', 'Stock', 'MinStock']);
     }
-    if (salesSheet.getLastRow() === 0) {
+
+    // Ensure Sales Sheet Exists
+    let salesSheet = ss.getSheetByName('Sales');
+    if (!salesSheet) {
+      salesSheet = ss.insertSheet('Sales');
       salesSheet.appendRow(['ID', 'Date', 'Total', 'ItemsJson']);
     }
 
     if (data.action === 'UPDATE_INVENTORY') {
-      productSheet.clearContents();
-      productSheet.appendRow(['ID', 'Name', 'Category', 'Wholesale', 'Retail', 'Stock', 'MinStock']);
+      // Clear old data but keep headers
+      if (productSheet.getLastRow() > 1) {
+        productSheet.getRange(2, 1, productSheet.getLastRow() - 1, 7).clearContent();
+      }
+      
       if (data.inventory && data.inventory.length > 0) {
-        const rows = data.inventory.map(p => [p.id, p.name, p.category, p.wholesalePrice, p.retailPrice, p.stock, p.minStockLevel]);
+        const rows = data.inventory.map(p => [
+          p.id, 
+          p.name, 
+          p.category, 
+          p.wholesalePrice, 
+          p.retailPrice, 
+          p.stock, 
+          p.minStockLevel
+        ]);
         productSheet.getRange(2, 1, rows.length, 7).setValues(rows);
       }
       return jsonResponse({status: 'success', message: 'Inventory synced'});
@@ -196,14 +222,23 @@ function doPost(e) {
         JSON.stringify(data.sale.items)
       ]);
       
-      // Update inventory as well
-      if (data.inventory) {
-         productSheet.clearContents();
-         productSheet.appendRow(['ID', 'Name', 'Category', 'Wholesale', 'Retail', 'Stock', 'MinStock']);
-         if (data.inventory.length > 0) {
-            const rows = data.inventory.map(p => [p.id, p.name, p.category, p.wholesalePrice, p.retailPrice, p.stock, p.minStockLevel]);
-            productSheet.getRange(2, 1, rows.length, 7).setValues(rows);
-         }
+      // Update inventory as well to keep stock in sync
+      if (data.inventory && data.inventory.length > 0) {
+        // Clear old data but keep headers
+        if (productSheet.getLastRow() > 1) {
+          productSheet.getRange(2, 1, productSheet.getLastRow() - 1, 7).clearContent();
+        }
+        
+        const rows = data.inventory.map(p => [
+          p.id, 
+          p.name, 
+          p.category, 
+          p.wholesalePrice, 
+          p.retailPrice, 
+          p.stock, 
+          p.minStockLevel
+        ]);
+        productSheet.getRange(2, 1, rows.length, 7).setValues(rows);
       }
       return jsonResponse({status: 'success', message: 'Sale recorded'});
     }
