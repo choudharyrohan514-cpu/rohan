@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Product } from '../types';
-import { Plus, Search, Trash2, Edit2, Save, X } from 'lucide-react';
+import { Plus, Search, Trash2, Edit2, Save, X, CloudDownload, CloudUpload } from 'lucide-react';
 import { CATEGORIES } from '../constants';
 
 interface InventoryProps {
@@ -8,9 +8,18 @@ interface InventoryProps {
   onAddProduct: (p: Product) => void;
   onUpdateProduct: (p: Product) => void;
   onDeleteProduct: (id: string) => void;
+  onLoadFromSheet: () => void;
+  onSaveToSheet: () => void;
 }
 
-const Inventory: React.FC<InventoryProps> = ({ products, onAddProduct, onUpdateProduct, onDeleteProduct }) => {
+const Inventory: React.FC<InventoryProps> = ({ 
+  products, 
+  onAddProduct, 
+  onUpdateProduct, 
+  onDeleteProduct, 
+  onLoadFromSheet,
+  onSaveToSheet 
+}) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
@@ -66,18 +75,38 @@ const Inventory: React.FC<InventoryProps> = ({ products, onAddProduct, onUpdateP
 
   return (
     <div className="space-y-6 h-full flex flex-col">
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
           <h2 className="text-2xl font-bold text-slate-800">Inventory Management</h2>
           <p className="text-slate-500">Track stock levels and pricing.</p>
         </div>
-        <button 
-          onClick={() => handleOpenModal()}
-          className="bg-primary hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors shadow-sm"
-        >
-          <Plus className="w-4 h-4" />
-          Add Product
-        </button>
+        <div className="flex gap-2 w-full md:w-auto">
+          <button 
+            onClick={onLoadFromSheet}
+            className="flex-1 md:flex-none bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-blue-600 px-3 py-2 rounded-lg flex items-center justify-center gap-2 transition-colors shadow-sm text-sm"
+            title="Download data from Google Sheet (Overwrites local)"
+          >
+            <CloudDownload className="w-4 h-4" />
+            <span className="hidden sm:inline">Load from Cloud</span>
+            <span className="sm:hidden">Load</span>
+          </button>
+           <button 
+            onClick={onSaveToSheet}
+            className="flex-1 md:flex-none bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-green-600 px-3 py-2 rounded-lg flex items-center justify-center gap-2 transition-colors shadow-sm text-sm"
+            title="Upload local data to Google Sheet"
+          >
+            <CloudUpload className="w-4 h-4" />
+            <span className="hidden sm:inline">Save to Cloud</span>
+            <span className="sm:hidden">Save</span>
+          </button>
+          <button 
+            onClick={() => handleOpenModal()}
+            className="bg-primary hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors shadow-sm text-sm"
+          >
+            <Plus className="w-4 h-4" />
+            Add Product
+          </button>
+        </div>
       </div>
 
       <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex gap-4">

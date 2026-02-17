@@ -7,17 +7,20 @@ import AIAssistant from './components/AIAssistant';
 import Settings from './components/Settings';
 import { View, Product, Sale, AppConfig, SaleItem } from './types';
 import { DEFAULT_PRODUCTS } from './constants';
+import { fetchInventoryFromSheet, syncInventoryToSheet, syncSaleToSheet } from './services/sheetService';
+import { Loader2 } from 'lucide-react';
 
 const App: React.FC = () => {
   const [currentView, setCurrentView] = useState<View>(View.DASHBOARD);
   
-  // App State - In a real app with Sheets, we'd fetch this on load
   const [products, setProducts] = useState<Product[]>([]);
   const [sales, setSales] = useState<Sale[]>([]);
   const [config, setConfig] = useState<AppConfig>({
     useGoogleSheets: false,
     googleScriptUrl: ''
   });
+  
+  const [isSyncing, setIsSyncing] = useState(false);
 
   // Load from LocalStorage on mount
   useEffect(() => {
@@ -36,7 +39,8 @@ const App: React.FC = () => {
     }
     
     if (savedConfig) {
-      setConfig(JSON.parse(savedConfig));
+      const parsedConfig = JSON.parse(savedConfig);
+      setConfig(parsedConfig);
     }
   }, []);
 
@@ -54,22 +58,76 @@ const App: React.FC = () => {
   }, [config]);
 
 
+  // Sheet Operations
+  const handleFetchFromSheet = async (urlOverride?: string) => {
+    const url = urlOverride || config.googleScriptUrl;
+    if (!url) {
+      alert("Please configure the Google Sheet URL in Settings first.");
+      return;
+    }
+    
+    setIsSyncing(true);
+    try {
+      const remoteProducts = await fetchInventoryFromSheet(url);
+      if (remoteProducts && remoteProducts.length > 0) {
+        setProducts(remoteProducts);
+        alert(`Successfully synced ${remoteProducts.length} items from Sheet.`);
+      } else {
+        alert("Connected to Sheet, but found no products. If this is a new sheet, try 'Save to Cloud' first.");
+      }
+    } catch (error) {
+      alert("Failed to sync: " + error);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  const syncInventory = async (newProducts: Product[]) => {
+    if (config.useGoogleSheets && config.googleScriptUrl) {
+      setIsSyncing(true);
+      await syncInventoryToSheet(config.googleScriptUrl, newProducts);
+      setIsSyncing(false);
+    }
+  };
+
+  // Manual trigger for saving entire list
+  const handleManualSaveToSheet = async () => {
+    if (!config.useGoogleSheets || !config.googleScriptUrl) {
+      alert("Please configure Google Sheets in Settings first.");
+      return;
+    }
+    setIsSyncing(true);
+    const success = await syncInventoryToSheet(config.googleScriptUrl, products);
+    setIsSyncing(false);
+    if (success) {
+      alert("Inventory successfully saved to Google Sheet.");
+    } else {
+      alert("Save failed. Check console for details.");
+    }
+  };
+
   // Handlers
   const handleAddProduct = (product: Product) => {
-    setProducts(prev => [...prev, product]);
+    const newProducts = [...products, product];
+    setProducts(newProducts);
+    syncInventory(newProducts);
   };
 
   const handleUpdateProduct = (updatedProduct: Product) => {
-    setProducts(prev => prev.map(p => p.id === updatedProduct.id ? updatedProduct : p));
+    const newProducts = products.map(p => p.id === updatedProduct.id ? updatedProduct : p);
+    setProducts(newProducts);
+    syncInventory(newProducts);
   };
 
   const handleDeleteProduct = (id: string) => {
     if (confirm('Are you sure you want to delete this product?')) {
-      setProducts(prev => prev.filter(p => p.id !== id));
+      const newProducts = products.filter(p => p.id !== id);
+      setProducts(newProducts);
+      syncInventory(newProducts);
     }
   };
 
-  const handleCheckout = (items: SaleItem[], total: number) => {
+  const handleCheckout = async (items: SaleItem[], total: number) => {
     const newSale: Sale = {
       id: crypto.randomUUID(),
       date: new Date().toISOString(),
@@ -77,16 +135,26 @@ const App: React.FC = () => {
       totalAmount: total
     };
 
-    setSales(prev => [newSale, ...prev]);
+    const newSales = [newSale, ...sales];
+    setSales(newSales);
 
     // Decrease Stock
-    setProducts(prev => prev.map(p => {
+    const newProducts = products.map(p => {
       const saleItem = items.find(i => i.productId === p.id);
       if (saleItem) {
         return { ...p, stock: Math.max(0, p.stock - saleItem.quantity) };
       }
       return p;
-    }));
+    });
+    setProducts(newProducts);
+
+    // Sync to Sheet
+    if (config.useGoogleSheets && config.googleScriptUrl) {
+      // We don't block the UI for this
+      setIsSyncing(true);
+      await syncSaleToSheet(config.googleScriptUrl, newSale, newProducts);
+      setIsSyncing(false);
+    }
   };
 
   const renderView = () => {
@@ -100,6 +168,8 @@ const App: React.FC = () => {
             onAddProduct={handleAddProduct}
             onUpdateProduct={handleUpdateProduct}
             onDeleteProduct={handleDeleteProduct}
+            onLoadFromSheet={() => handleFetchFromSheet()}
+            onSaveToSheet={handleManualSaveToSheet}
           />
         );
       case View.POS:
@@ -107,7 +177,13 @@ const App: React.FC = () => {
       case View.AI_INSIGHTS:
         return <AIAssistant products={products} sales={sales} />;
       case View.SETTINGS:
-        return <Settings config={config} onUpdateConfig={setConfig} />;
+        return (
+          <Settings 
+            config={config} 
+            onUpdateConfig={setConfig} 
+            onTestConnection={() => handleFetchFromSheet()} 
+          />
+        );
       default:
         return <Dashboard products={products} sales={sales} />;
     }
@@ -116,7 +192,15 @@ const App: React.FC = () => {
   return (
     <div className="flex min-h-screen bg-[#f8fafc]">
       <Sidebar currentView={currentView} setCurrentView={setCurrentView} />
-      <main className="flex-1 ml-64 p-8 overflow-x-hidden">
+      <main className="flex-1 ml-64 p-8 overflow-x-hidden relative">
+        {/* Sync Indicator */}
+        {isSyncing && (
+          <div className="fixed top-4 right-4 z-50 bg-white shadow-lg border border-primary/20 text-primary px-4 py-2 rounded-full flex items-center gap-2 animate-in slide-in-from-top-2">
+            <Loader2 className="w-4 h-4 animate-spin" />
+            <span className="text-sm font-medium">Syncing with Google Sheets...</span>
+          </div>
+        )}
+        
         {renderView()}
       </main>
     </div>
