@@ -1,0 +1,7 @@
+{
+  "name": "Copy of WholesaleFlow",
+  "description": "A comprehensive wholesale general store management system with Google Sheets integration capabilities and AI-powered insights.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
