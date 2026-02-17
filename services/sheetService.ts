@@ -6,15 +6,34 @@ import { Product, Sale } from '../types';
  */
 export const fetchInventoryFromSheet = async (scriptUrl: string): Promise<Product[]> => {
   try {
-    const response = await fetch(scriptUrl);
-    if (!response.ok) throw new Error('Network response was not ok');
+    // Add cache buster to prevent GitHub Pages from caching the API response
+    const url = `${scriptUrl}?t=${Date.now()}`;
     
-    const data = await response.json();
+    const response = await fetch(url, {
+      method: 'GET',
+      redirect: 'follow', // Important: Follow Google's redirects
+    });
+
+    if (!response.ok) {
+        throw new Error(`Server returned ${response.status} ${response.statusText}. Ensure permissions are set to 'Anyone' in Google Script.`);
+    }
+    
+    const text = await response.text();
+    let data;
+    try {
+        data = JSON.parse(text);
+    } catch (e) {
+        // If response is HTML (login page), it means permissions are wrong
+        if (text.toLowerCase().includes('google') || text.toLowerCase().includes('signin')) {
+            throw new Error("Permission Error: Please set Google Script access to 'Anyone'.");
+        }
+        throw new Error("Invalid JSON response from sheet.");
+    }
     
     if (data.status === 'error') throw new Error(data.message);
     
     // Map and validate types
-    return data.map((item: any) => ({
+    return Array.isArray(data) ? data.map((item: any) => ({
       id: String(item.id),
       name: String(item.name),
       category: String(item.category),
@@ -22,7 +41,7 @@ export const fetchInventoryFromSheet = async (scriptUrl: string): Promise<Produc
       retailPrice: Number(item.retailPrice) || 0,
       stock: Number(item.stock) || 0,
       minStockLevel: Number(item.minStockLevel) || 0,
-    }));
+    })) : [];
   } catch (error) {
     console.error("Failed to fetch from sheet", error);
     throw error;
@@ -49,6 +68,7 @@ export const syncSaleToSheet = async (scriptUrl: string, sale: Sale, updatedProd
       },
       body: payload
     });
+    // In no-cors mode, we can't check response.ok. We assume success if no network error thrown.
     return true;
   } catch (e) {
     console.error("Sync sale failed", e);

@@ -13,8 +13,16 @@ const Settings: React.FC<SettingsProps> = ({ config, onUpdateConfig, onTestConne
   const [copied, setCopied] = useState(false);
 
   const handleSave = () => {
-    onUpdateConfig(localConfig);
-    alert('Configuration saved! Now try "Save to Cloud" in Inventory.');
+    // Auto-fix URL if user pastes the editor link instead of the web app link
+    let cleanUrl = localConfig.googleScriptUrl.trim();
+    if (cleanUrl.includes('/edit')) {
+      cleanUrl = cleanUrl.split('/edit')[0] + '/exec';
+    }
+    
+    const newConfig = { ...localConfig, googleScriptUrl: cleanUrl };
+    setLocalConfig(newConfig); // Update local state
+    onUpdateConfig(newConfig); // Update app state
+    alert('Configuration saved! URL auto-corrected to /exec version.');
   };
 
   const copyCode = () => {
@@ -63,7 +71,7 @@ const Settings: React.FC<SettingsProps> = ({ config, onUpdateConfig, onTestConne
                   type="text"
                   value={localConfig.googleScriptUrl}
                   onChange={(e) => setLocalConfig({...localConfig, googleScriptUrl: e.target.value})}
-                  placeholder="https://script.google.com/macros/s/..."
+                  placeholder="https://script.google.com/macros/s/.../exec"
                   className="flex-1 p-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-primary/20 outline-none font-mono text-sm"
                 />
                 <button 
@@ -74,6 +82,7 @@ const Settings: React.FC<SettingsProps> = ({ config, onUpdateConfig, onTestConne
                   Save
                 </button>
               </div>
+              <p className="text-xs text-slate-400 mt-1">Paste the URL generated after clicking "Deploy" in Google Scripts.</p>
             </div>
 
             {localConfig.googleScriptUrl && (
@@ -95,7 +104,7 @@ const Settings: React.FC<SettingsProps> = ({ config, onUpdateConfig, onTestConne
       <div className="bg-slate-50 p-6 rounded-2xl border border-slate-200">
         <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2">
           <AlertCircle className="w-5 h-5 text-blue-600" />
-          How to Setup Google Sheets (Updated)
+          How to Setup Google Sheets (Critical for GitHub)
         </h3>
         
         <ol className="list-decimal list-inside space-y-3 text-sm text-slate-600 mb-6">
@@ -104,9 +113,8 @@ const Settings: React.FC<SettingsProps> = ({ config, onUpdateConfig, onTestConne
           <li>Delete everything and paste the code below.</li>
           <li>Click <strong>Deploy &gt; New Deployment</strong>.</li>
           <li>Select type: <strong>Web App</strong>.</li>
-          <li><strong>CRITICAL:</strong> Set "Who has access" to: <strong>Anyone</strong>.</li>
+          <li><strong>CRITICAL STEP:</strong> Set "Who has access" to: <strong>Anyone</strong> (Not "Anyone with Google Account").</li>
           <li>Click Deploy, copy the URL, and paste it above.</li>
-          <li>If "Products" or "Sales" tabs don't exist, the script will create them automatically.</li>
         </ol>
 
         <div className="relative">
